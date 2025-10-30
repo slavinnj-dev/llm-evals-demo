@@ -1,24 +1,88 @@
 import streamlit as st
-from openai import OpenAI
+
+from web_search import search
+from langchain.agents import create_agent
+from autoevals.llm import *
+
+from braintrust import init_logger
+from braintrust_langchain import BraintrustCallbackHandler, set_global_handler
 
 # Show title and description.
-st.title("💬 Chatbot")
-st.write(
-    "This is a simple chatbot that uses OpenAI's GPT-3.5 model to generate responses. "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
+st.title("🎤 SpotifyAI Playlist 🎵")
+
+def select_model(option):
+    if option:
+        provider = ''
+        model = ''
+        key = ''
+        if option == "Claude":
+            provider = "anthropic"
+            model = "claude-haiku-4-5"
+            key = st.secrets["ANTHROPIC_API_KEY"]
+        elif option == "Gemini":
+            provider = "google_vertexai"
+            model = "gemini-2.0-flash-lite"
+            key = st.secrets["GEMINI_API_KEY"]
+        elif option == "Mistral":
+            provider = "mistralai"
+            model = "mistral-small-latest"
+            key = st.secrets["MISTRAL_API_KEY"]
+        elif option == "Llama":
+            provider = "groq"
+            model = "llama-3.3-70b-versatile"
+            key = st.secrets["GROQ_API_KEY"]
+        elif option == "GPT-OSS":
+            provider = "groq"
+            model = "openai/gpt-oss-120b"
+            key = st.secrets["GROQ_API_KEY"]
+        model_string = '{}:{}'.format(provider, model)
+        st.write("Using model:", model_string)
+        return model_string
+    
+def setup_model(model_string):
+    system_prompt = ''
+    try:
+        with open("system_prompt.txt", "r") as f:
+            content = f.read()
+            system_prompt = content
+    except FileNotFoundError:
+        print("Error: System prompt not found.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    system_prompt = content
+
+    tools = [search]
+
+    bt_key = st.secrets["BRAINTRUST_API_KEY"]
+
+    init_logger(project="Playlist Generation", api_key=bt_key)
+
+    handler = BraintrustCallbackHandler()
+    set_global_handler(handler)
+
+    agent = create_agent(model=model_string, tools=tools, system_prompt=system_prompt)
+    return agent
+
+def stream_ai_messages(agent, inputs):
+    for event in agent.stream(inputs):
+        if "model" in event:
+            for message in event["model"]["messages"]:
+                if message.__class__.__name__ == 'AIMessage':
+                    yield message.content
+    
+
+option = ''
+option = st.selectbox(
+    "Model",
+    ("Claude", "Gemini", "Mistral", "Llama", "GPT-OSS"),
+    index=None,
+    placeholder="Select provider...",
 )
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
-
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
+if option:
+    model_string = select_model(option)
+    agent = setup_model(model_string)
 
     # Create a session state variable to store the chat messages. This ensures that the
     # messages persist across reruns.
@@ -30,27 +94,16 @@ else:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Create a chat input field to allow the user to enter a message. This will display
-    # automatically at the bottom of the page.
-    if prompt := st.chat_input("What is up?"):
 
+    if prompt := st.chat_input("What are you listening to today?"):
         # Store and display the current prompt.
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Generate a response using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ],
-            stream=True,
-        )
+        inputs = {"messages": [("user", prompt)]}
 
-        # Stream the response to the chat using `st.write_stream`, then store it in 
-        # session state.
+
         with st.chat_message("assistant"):
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+            fmt_response = st.write_stream(stream_ai_messages(agent, inputs))
+            st.session_state.messages.append({"role": "assistant", "content": fmt_response})
