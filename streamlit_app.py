@@ -35,6 +35,14 @@ def select_model(option):
             provider = "groq"
             model = "openai/gpt-oss-120b"
             key = st.secrets["GROQ_API_KEY"]
+        elif option == "GPT 4o-mini":
+            provider = "openai"
+            model = "gpt-4o-mini"
+            key = st.secrets["OPENAI_API_KEY"]
+        elif option == "Deepseek r1 Distill":
+            provider = "groq"
+            model = "deepseek-r1-distill-qwen-32b"
+            key = st.secrets["GROQ_API_KEY"]
         model_string = '{}:{}'.format(provider, model)
         st.write("Using model:", model_string)
         return model_string
@@ -75,7 +83,7 @@ def stream_ai_messages(agent, inputs):
 option = ''
 option = st.selectbox(
     "Model",
-    ("Claude", "Gemini", "Mistral", "Llama", "GPT-OSS"),
+    ("Claude", "Gemini (soon...)", "Mistral", "Llama", "GPT-OSS", "GPT 4o-mini", "Deepseek r1 Distill (soon...)"),
     index=None,
     placeholder="Select provider...",
 )
